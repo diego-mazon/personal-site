@@ -5,8 +5,8 @@ import react from '@astrojs/react';
 
 // https://astro.build/config
 export default defineConfig({
-  // GitHub Pages project site: https://dmazon.github.io/personal-site/
-  site: 'https://dmazon.github.io',
+  // GitHub Pages project site: https://diego-mazon.github.io/personal-site/
+  site: 'https://diego-mazon.github.io',
   base: '/personal-site',
   integrations: [react()]
 });

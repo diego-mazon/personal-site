@@ -74,9 +74,9 @@ which runs on every push to `main`. In the repo's Settings → Pages, set
 
 The site is configured as a **project page**:
 
-- `site: 'https://dmazon.github.io'`
+- `site: 'https://diego-mazon.github.io'`
 - `base: '/personal-site'`
 
-If you rename the repo, or want a user/root page (`dmazon.github.io`)
+If you rename the repo, or want a user/root page (`diego-mazon.github.io`)
 instead, update both values in [`astro.config.mjs`](astro.config.mjs) —
 for a root page, drop `base` entirely.
