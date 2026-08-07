@@ -1,0 +1,24 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Counter from '../components/demos/Counter.jsx';
+import ColorMixer from '../components/demos/ColorMixer.jsx';
+---
+
+<BaseLayout title="Demos — David Mazon" description="Interactive component demos.">
+  <h1>Demos</h1>
+  <p class="muted">
+    Small interactive components, each a plain <code>.jsx</code> file under
+    <code>src/components/demos/</code>, hydrated client-side with Astro's
+    React integration. Everything else on this site ships no JavaScript.
+  </p>
+
+  <div class="demo-frame">
+    <h3>Counter</h3>
+    <Counter client:load start={0} />
+  </div>
+
+  <div class="demo-frame">
+    <h3>Color mixer</h3>
+    <ColorMixer client:visible />
+  </div>
+</BaseLayout>

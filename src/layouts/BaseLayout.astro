@@ -1,0 +1,41 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Personal site, blog, and interactive demos.' } = Astro.props;
+// Normalize so we can always append "/path" without risking a double slash.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <nav class="site-nav">
+      <div class="wrap">
+        <a class="brand" href={`${base}/`}>David Mazon</a>
+        <a href={`${base}/`}>Home</a>
+        <a href={`${base}/blog`}>Blog</a>
+        <a href={`${base}/demos`}>Demos</a>
+      </div>
+    </nav>
+    <main class="wrap">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        &copy; {new Date().getFullYear()} David Mazon. Built with Astro.
+      </div>
+    </footer>
+  </body>
+</html>

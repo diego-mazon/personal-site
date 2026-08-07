@@ -1,17 +1,43 @@
 ---
+import BaseLayout from '../layouts/BaseLayout.astro';
 
+const projects = [
+  {
+    name: 'Project One',
+    description: 'A short description of what this project does and why it matters.',
+    href: 'https://github.com/dmazon',
+  },
+  {
+    name: 'Project Two',
+    description: 'Another project worth linking to, with a one-line pitch.',
+    href: 'https://github.com/dmazon',
+  },
+];
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<BaseLayout title="David Mazon">
+  <section>
+    <h1>Hi, I'm David.</h1>
+    <p class="muted">
+      I build software. This site collects my projects, occasional writing, and a
+      few interactive demos.
+    </p>
+    <p>
+      <a href="mailto:dg.mazon@gmail.com">dg.mazon@gmail.com</a>
+      &middot;
+      <a href="https://github.com/dmazon">GitHub</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Projects</h2>
+    {
+      projects.map((project) => (
+        <div class="card">
+          <h3><a href={project.href}>{project.name}</a></h3>
+          <p class="muted">{project.description}</p>
+        </div>
+      ))
+    }
+  </section>
+</BaseLayout>
