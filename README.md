@@ -1,6 +1,6 @@
 # personal-site
 
-David Mazon's personal site: a portfolio landing page, a Markdown-based blog,
+Diego Mazon's personal site: a portfolio landing page, a Markdown-based blog,
 and a page of interactive demos. Built with [Astro](https://astro.build), no
 backend or database — everything is prerendered to static files.
 
