@@ -519,6 +519,11 @@ function MapOutline({ nodeId }) {
   );
 }
 
+// Toggle to bring back the Full map, Three dimensions, Design vs. estimator,
+// Cheatsheet, and 2SLR/2SLS/DML sections — currently hidden so the page only
+// shows the interactive tree and the Reference sheet.
+const SHOW_EXTRA_SECTIONS = false;
+
 export default function CausalDecisionTree() {
   const [path, setPath] = useState([]);
   const [currentId, setCurrentId] = useState("q_random");
@@ -703,25 +708,27 @@ export default function CausalDecisionTree() {
         </div>
 
         {/* Full map */}
-        <div className="mb-12 pt-8 border-t border-slate-800">
-          <div className="text-xs text-cyan-400 uppercase tracking-widest mb-2" style={MONO}>
-            Full map
+        {SHOW_EXTRA_SECTIONS && (
+          <div className="mb-12 pt-8 border-t border-slate-800">
+            <div className="text-xs text-cyan-400 uppercase tracking-widest mb-2" style={MONO}>
+              Full map
+            </div>
+            <h3 className="text-lg text-white font-medium mb-4" style={DISPLAY}>
+              Every branch of the tree
+            </h3>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mb-6">
+              {Object.entries(CATEGORY_STYLES).map(([key, val]) => (
+                <div key={key} className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className={`w-2 h-2 rounded-full ${val.dot}`}></span>
+                  {val.label}
+                </div>
+              ))}
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+              <MapOutline nodeId="q_random" />
+            </div>
           </div>
-          <h3 className="text-lg text-white font-medium mb-4" style={DISPLAY}>
-            Every branch of the tree
-          </h3>
-          <div className="flex flex-wrap gap-x-4 gap-y-2 mb-6">
-            {Object.entries(CATEGORY_STYLES).map(([key, val]) => (
-              <div key={key} className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className={`w-2 h-2 rounded-full ${val.dot}`}></span>
-                {val.label}
-              </div>
-            ))}
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-            <MapOutline nodeId="q_random" />
-          </div>
-        </div>
+        )}
 
         {/* Reference sheet */}
         <div className="mb-12 pt-8 border-t border-slate-800">
@@ -776,6 +783,8 @@ export default function CausalDecisionTree() {
         </div>
 
         {/* Three dimensions */}
+        {SHOW_EXTRA_SECTIONS && (
+        <>
         <div className="mb-12 pt-8 border-t border-slate-800">
           <div className="text-xs text-cyan-400 uppercase tracking-widest mb-2" style={MONO}>
             Three dimensions
@@ -962,6 +971,8 @@ export default function CausalDecisionTree() {
             </p>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
