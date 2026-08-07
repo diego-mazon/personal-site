@@ -1,0 +1,13 @@
+/*
+ * Tailwind v4, utilities-only.
+ *
+ * Deliberately skips the "base" (preflight) layer — the rest of the site
+ * uses its own hand-written reset in global.css, and loading Tailwind's
+ * preflight globally would silently change default styles (headings,
+ * links, buttons, etc.) on every page, not just the demos page.
+ *
+ * Imported only from src/pages/demos.astro, so it's scoped to that page's
+ * bundle and never loads on Home or Blog.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
