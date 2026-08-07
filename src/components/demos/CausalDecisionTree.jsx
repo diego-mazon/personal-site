@@ -1,13 +1,21 @@
 import React, { useState } from "react";
 import { ChevronRight, ArrowLeft, RotateCcw, Circle, GitBranch } from "lucide-react";
 
+// Flow order is ranked by Assumption credibility first, then Robustness to
+// approximate conditions, then Precision, then Robustness to researcher
+// choices — NOT by data availability. Operational difficulty is deliberately
+// excluded from the ranking; it only gates whether a step's condition is
+// checkable at all. Two nodes that were previously combined have been split
+// into their own entries: "Propensity Score / Double ML" → r_psm + r_dml,
+// and "Distance Matching / ANCOVA" → r_distmatch + r_ancova.
 const TREE = {
+  // Step 1 — randomization (highest credibility tier)
   q_random: {
     type: "question",
     text: "Can you assign treatment randomly?",
     options: [
       { label: "Yes, I can randomize", next: "q_level" },
-      { label: "No, I can't randomize", next: "q_iv" },
+      { label: "No, I can't randomize", next: "q_cutoff" },
     ],
   },
   q_level: {
@@ -23,12 +31,13 @@ const TREE = {
     category: "experimental",
     estimator: "Difference in means (+ ANCOVA / CUPED)",
     title: "RCT / A-B Test",
+    python: "statsmodels (difference-in-means, ANCOVA via ols), scipy.stats (t-tests), statsmodels.stats.power (power analysis)",
     assumption:
       "Randomization guarantees balance in observable and unobservable covariates between groups.",
     whenToUse: "You can directly control treatment assignment.",
     limitation:
       "Cost and time to implement. Watch out for SUTVA violations (network effects in marketplaces or ads).",
-    note: "Apply ANCOVA (regressing the outcome on the treatment indicator + pre-treatment covariates) to reduce variance at no extra cost. CUPED is a special case of this same principle, using the pre-period metric as the covariate.",
+    note: "Apply ANCOVA (regressing the outcome on the treatment indicator + pre-treatment covariates) to reduce variance at no extra cost. CUPED is a special case of this same principle, using the pre-period metric as the covariate. Highest-ranked design on every credibility axis — nothing below it is preferred when randomization is actually available.",
   },
   r_switchback: {
     type: "result",
@@ -36,43 +45,25 @@ const TREE = {
     tag: "Carryover risk",
     estimator: "TWFE (unit and time fixed effects)",
     title: "RCT — Switchback (time blocks)",
+    python: "linearmodels.PanelOLS (clustered standard errors at the block level), statsmodels for the underlying regression",
     assumption:
       "The same unit randomly alternates between treatment and control across successive time blocks: D ⊥ (Y(1),Y(0)) still holds, but now at the unit-period level.",
     whenToUse:
       "Randomizing at the individual level isn't feasible (e.g. two-sided marketplaces, pricing, logistics), but you can alternate treatment over time for the same unit.",
     limitation:
       "Carryover: one period's treatment can contaminate the next because it's the same unit. Requires washout periods between blocks and standard errors clustered at the time-block level, or the effect is biased and the SEs understated.",
-    note: "Analyzed as a panel — the same estimator (TWFE) as DiD and Fixed Effects — but here D_it is randomized, not observed or assumed. That's why it stays experimental, not quasi-experimental, even though it shares a formula with them.",
+    note: "Analyzed as a panel — the same estimator (TWFE) as DiD and Fixed Effects — but here D_it is randomized, not observed or assumed. That's why it stays experimental, not quasi-experimental, even though it shares a formula with them. Ranks just below plain RCT solely because of carryover exposure (Robustness to approximate conditions: Medium vs. High) — every other axis is still design-based, not asymptotic.",
   },
-  q_iv: {
-    type: "question",
-    text: "Is there a valid instrumental variable? (affects treatment but not the outcome, except through it)",
-    options: [
-      { label: "Yes, I have a valid instrument", next: "r_iv" },
-      { label: "No, I don't have a clear instrument", next: "q_cutoff" },
-    ],
-  },
-  r_iv: {
-    type: "result",
-    category: "quasi",
-    estimator: "2SLS",
-    title: "Instrumental Variables (IV / 2SLS)",
-    assumption:
-      "Exclusion restriction: the instrument only affects the outcome through the treatment.",
-    whenToUse:
-      "There's a source of exogenous variation in treatment (policy, lottery, distance, etc.).",
-    limitation:
-      "Weak instruments bias the estimates; the exclusion restriction isn't directly testable, only arguable.",
-    source:
-      "Angrist (1990): the Vietnam draft lottery number, as an instrument for military service.\nAngrist & Krueger (1991): quarter of birth as an instrument for years of schooling (compulsory schooling laws).",
-    note: "Fuzzy RDD uses this same estimator (2SLS): crossing the threshold acts as an instrument for actual treatment receipt. Same estimator, different source of variation.",
-  },
+
+  // Step 2 — threshold/cutoff designs. Checked before the panel-comparison
+  // group and before a generic instrument: continuity near a cutoff is
+  // treated in the literature as close to "as good as random."
   q_cutoff: {
     type: "question",
-    text: "Is there a threshold or cutoff rule that determines treatment?",
+    text: "Is there a credible threshold or cutoff rule that determines treatment?",
     options: [
-      { label: "Yes, there's a clear cutoff", next: "q_compliance" },
-      { label: "No cutoff", next: "q_time" },
+      { label: "Yes, there's a credible cutoff", next: "q_compliance" },
+      { label: "No credible cutoff", next: "q_time" },
     ],
   },
   q_compliance: {
@@ -88,6 +79,7 @@ const TREE = {
     category: "quasi",
     estimator: "Local polynomial regression",
     title: "Regression Discontinuity — Sharp RDD",
+    python: "rdrobust (Python port of the Calonico–Cattaneo–Titiunik package — field standard for bandwidth selection and robust inference)",
     assumption: "Continuity of potential outcomes around the threshold.",
     whenToUse:
       "Assignment depends on a continuous variable (running variable) with a clear cutoff, and all units comply.",
@@ -95,7 +87,7 @@ const TREE = {
       "Only identifies a local effect (LATE) near the threshold; low power if there are few observations near the cutoff.",
     source:
       "Thistlethwaite & Campbell (1960): the National Merit Scholarship cutoff score — the original RDD paper.\nLee (2008): U.S. House elections decided by a narrow vote-share margin, used to study incumbency effects.",
-    note: "Z = 1{X≥c} is the same deterministic crossing indicator in sharp and fuzzy RDD — it's never what's 'fuzzy'. Here D_i = Z_i exactly, so there's no first stage to speak of (π̂₁=1) and the reduced-form jump in Y at c is already τ̂, with nothing to divide by.",
+    note: "Z = 1{X≥c} is the same deterministic crossing indicator in sharp and fuzzy RDD — it's never what's 'fuzzy'. Here D_i = Z_i exactly, so there's no first stage to speak of (π̂₁=1) and the reduced-form jump in Y at c is already τ̂, with nothing to divide by. On Assumption credibility it's essentially tied with the randomized designs — continuity at a cutoff is often treated as 'as good as random' — even though its local sample makes Precision Low, unlike RCT.",
   },
   r_rdd_fuzzy: {
     type: "result",
@@ -103,6 +95,7 @@ const TREE = {
     tag: "Shares estimator with IV",
     estimator: "2SLS (local IV)",
     title: "Regression Discontinuity — Fuzzy RDD",
+    python: "rdrobust (same package as sharp RDD — supports fuzzy designs natively via the fuzzy argument)",
     assumption:
       "Continuity of potential outcomes around the threshold + crossing the threshold predicts treatment probability (relevance), like an instrument.",
     whenToUse:
@@ -111,14 +104,22 @@ const TREE = {
       "Inherits IV's limitations (weak instrument if the jump in treatment probability is small) plus RDD's (only local LATE).",
     source:
       "Angrist & Lavy (1999): 'Maimonides' Rule' — enrollment thresholds that trigger an extra class split (max 40 students), not perfectly enforced.\nvan der Klaauw (2002): financial-aid offers based on a threshold index that shifted admission probability without fully determining it.",
-    note: "It's literally a local IV: crossing the threshold instruments actual treatment receipt. That's why it shares an estimator (2SLS) with Instrumental Variables, even though the source of variation — a cutoff, not an external instrument — is different. Sharp vs. fuzzy is a compliance distinction, not a difference in Z: here D_i ≠ Z_i (some units above c go untreated, some below get treated anyway), so π̂₁<1 and τ̂ needs the ratio γ̂₁/π̂₁ instead of reading the jump off directly.",
+    note: "It's literally a local IV: crossing the threshold instruments actual treatment receipt. That's why it shares an estimator (2SLS) with Instrumental Variables, even though the source of variation — a cutoff, not an external instrument — is different. Sharp vs. fuzzy is a compliance distinction, not a difference in Z: here D_i ≠ Z_i, so π̂₁<1 and τ̂ needs the ratio γ̂₁/π̂₁ instead of reading the jump off directly. Ranking judgment call, not a settled fact: it's placed above a generic instrument because the applied-econometrics literature (Lee & Lemieux 2010; Imbens & Lemieux 2008) generally treats RDD, sharp or fuzzy, as a higher-credibility category than an arbitrary external instrument — threshold-crossing is locally quasi-random in a way most instruments aren't.",
   },
+
+  // Step 3 — panel data with a comparison group (Medium credibility tier).
+  // Checked before a generic instrument, since DiD/FE/SCM rank above
+  // Instrumental Variables here. The "no comparison units" branch is the
+  // one place data availability, not credibility, forces an earlier check:
+  // it routes to Interrupted Time Series (last resort on every quality
+  // axis) simply because that's the only remaining possibility once you
+  // know there's no comparison group at all.
   q_time: {
     type: "question",
     text: "Do you have measurements over time, before and after the intervention?",
     options: [
       { label: "Yes, I have a pre/post time series", next: "q_control" },
-      { label: "No, I only have a cross-sectional snapshot", next: "q_confound" },
+      { label: "No, I only have a cross-sectional snapshot", next: "q_iv" },
     ],
   },
   q_control: {
@@ -128,20 +129,6 @@ const TREE = {
       { label: "Yes, I have comparison units", next: "q_ttype" },
       { label: "No, I only have the treated unit's own series", next: "r_its" },
     ],
-  },
-  r_its: {
-    type: "result",
-    category: "quasi",
-    tag: "No control group",
-    estimator: "Segmented trend regression (level + slope)",
-    title: "Interrupted Time Series",
-    assumption:
-      "The pre-intervention trend (level and slope) reasonably defines the post-intervention counterfactual.",
-    whenToUse:
-      "Long time series, with a clear intervention point, with no comparison unit available.",
-    limitation:
-      "Vulnerable to concurrent shocks unrelated to the treatment — it's the weakest identification among quasi-experimental designs, precisely because it lacks a control group.",
-    note: "It differs from a simple pre-post design in that ITS uses multiple time points before and after (not just one on each side) to explicitly model the trend's level and slope, separating the treatment effect from a pre-existing trend. A single-measurement pre-post can't distinguish the treatment effect from the natural trend or from regression to the mean.",
   },
   q_ttype: {
     type: "question",
@@ -157,6 +144,7 @@ const TREE = {
     tag: "With control group",
     estimator: "TWFE (unit and time fixed effects)",
     title: "Fixed Effects (Unit and Time Fixed Effects)",
+    python: "pyfixest (fast, fixest-style estimation with multi-way clustering — increasingly the default choice), linearmodels.PanelOLS",
     assumption:
       "Strict exogeneity conditional on unit and time fixed effects: no confounders vary over time and correlate with the treatment level, beyond common shocks already absorbed by the time effects.",
     whenToUse:
@@ -165,7 +153,7 @@ const TREE = {
       "Doesn't correct for confounders that vary over time at the unit level. With variable treatment intensity and heterogeneous effects, TWFE can misweight some comparisons — the same weighting problem that affects staggered DiD.",
     source:
       "Duflo (2001): Indonesia's INPRES school-construction program, whose intensity varied by region and birth cohort.\nCurrie & Gruber (1996): state-level Medicaid eligibility expansions, varying in scope and timing, and their effect on child health.",
-    note: "DiD is, formally, a special case of Fixed Effects with binary treatment in two periods: they share the same fixed-effects regression estimator (TWFE).",
+    note: "DiD is, formally, a special case of Fixed Effects with binary treatment in two periods: they share the same fixed-effects regression estimator (TWFE). This trio (DiD/FE/SCM) doesn't compete internally for the same problem — the event-vs-continuous-vs-few-unit sub-condition just picks between them — but as a tier they sit above a generic instrument: Medium credibility, generally High precision, since they use full-panel differencing rather than a local sample.",
   },
   q_nunits: {
     type: "question",
@@ -181,6 +169,7 @@ const TREE = {
     tag: "With control group",
     estimator: "Synthetic weights (convex optimization)",
     title: "Synthetic Control Method",
+    python: "pysyncon (Abadie's convex-weight donor construction, literally); causalimpact (Bayesian structural time-series alternative — a related but genuinely different method, drops the convex-weights constraint); SparseSC for large donor pools needing regularized weights",
     assumption:
       "A weighted combination of control units closely replicates the treated unit's pre-treatment trajectory.",
     whenToUse:
@@ -195,6 +184,7 @@ const TREE = {
     tag: "With control group",
     estimator: "TWFE (unit and time fixed effects)",
     title: "Difference-in-Differences",
+    python: "pyfixest or linearmodels.PanelOLS for classic TWFE; differences (Callaway & Sant'Anna 2021) for staggered-adoption-robust estimation",
     assumption: "Parallel trends between treated and control groups in the absence of treatment.",
     whenToUse: "Panel with several units and periods, and a reasonable control group.",
     limitation:
@@ -202,6 +192,53 @@ const TREE = {
     source:
       "Card & Krueger (1994): New Jersey's minimum wage increase vs. neighboring Pennsylvania (no change), fast-food employment.\nCard (1990): the Mariel Boatlift — a sudden surge of Cuban immigrants to Miami, compared to other cities.",
   },
+  r_its: {
+    type: "result",
+    category: "quasi",
+    tag: "No control group — last resort",
+    estimator: "Segmented trend regression (level + slope)",
+    title: "Interrupted Time Series",
+    python: "statsmodels (segmented regression via ols with level/slope interaction terms; cov_type='HAC' for autocorrelation-robust standard errors)",
+    assumption:
+      "The pre-intervention trend (level and slope) reasonably defines the post-intervention counterfactual.",
+    whenToUse:
+      "Long time series, with a clear intervention point, with no comparison unit available.",
+    limitation:
+      "Vulnerable to concurrent shocks unrelated to the treatment — it's the weakest identification among quasi-experimental designs, precisely because it lacks a control group.",
+    note: "It differs from a simple pre-post design in that ITS uses multiple time points before and after (not just one on each side) to explicitly model the trend's level and slope, separating the treatment effect from a pre-existing trend. On the credibility ranking this is the actual last resort — lowest on every quality axis except Operational difficulty. It's reached earlier in this tool's flow only because 'no comparison group at all' is a data-availability fact that has to be checked before you can even ask about instruments or covariates — cheapest to attempt isn't the same as best once attempted.",
+  },
+
+  // Step 4 — a generic instrument (Low credibility: the exclusion
+  // restriction is fundamentally untestable). Checked after the panel tier,
+  // not before it.
+  q_iv: {
+    type: "question",
+    text: "Is there a variable that moves treatment but affects the outcome only through treatment (a valid instrument)?",
+    options: [
+      { label: "Yes, I have a valid instrument", next: "r_iv" },
+      { label: "No, I don't have a clear instrument", next: "q_confound" },
+    ],
+  },
+  r_iv: {
+    type: "result",
+    category: "quasi",
+    estimator: "2SLS",
+    title: "Instrumental Variables (IV / 2SLS)",
+    python: "linearmodels.iv.IV2SLS (actively maintained, preferred over the older statsmodels IV tools)",
+    assumption:
+      "Exclusion restriction: the instrument only affects the outcome through the treatment.",
+    whenToUse:
+      "There's a source of exogenous variation in treatment (policy, lottery, distance, etc.).",
+    limitation:
+      "Weak instruments bias the estimates; the exclusion restriction isn't directly testable, only arguable.",
+    source:
+      "Angrist (1990): the Vietnam draft lottery number, as an instrument for military service.\nAngrist & Krueger (1991): quarter of birth as an instrument for years of schooling (compulsory schooling laws).",
+    note: "Fuzzy RDD uses this same estimator (2SLS): crossing the threshold acts as an instrument for actual treatment receipt. Same estimator, different source of variation. Low Assumption credibility — the same tier as Double ML below, and for a related reason (the exclusion restriction here is as untestable as unconfoundedness there). They solve different problems (exogenous variation vs. observed confounders), so if both an instrument and rich covariates happen to be available, treat this step and the Double ML step as parallel checks rather than a strict hierarchy — the sequential order below is a tie-break, not a quality claim.",
+  },
+
+  // Step 5 — selection on observables, Low credibility tier. Only reached
+  // once no better-identified design (randomization, threshold, panel
+  // comparison, instrument) is available.
   q_confound: {
     type: "question",
     text: "Are all confounding variables observable? (selection on observables)",
@@ -212,48 +249,96 @@ const TREE = {
   },
   q_dim: {
     type: "question",
-    text: "Do you have high-dimensional covariates?",
+    text: "Do you have high-dimensional or nonlinear covariates you're confident capture all confounders?",
     options: [
-      { label: "Yes, many covariates", next: "r_psm" },
-      { label: "No, few known covariates", next: "r_match" },
+      { label: "Yes — I trust a flexible model to capture them", next: "r_dml" },
+      { label: "They're rich/high-dimensional, but I'd rather use a simpler propensity-score approach", next: "r_psm" },
+      { label: "No, only a few known covariates", next: "q_linear" },
     ],
+  },
+  r_dml: {
+    type: "result",
+    category: "observational",
+    estimator: "Neyman-orthogonal residual-on-residual, cross-fitted",
+    title: "Double Machine Learning",
+    python: "doubleml (official package implementing Chernozhukov et al. 2018 directly), econml.dml (LinearDML, CausalForestDML, and variants)",
+    assumption:
+      "Selection on observables + overlap, specifically when X is high-dimensional or its relationship to Y and D is nonlinear.",
+    whenToUse:
+      "Rich, high-dimensional or nonlinear covariates that flexible learners (gradient boosting, random forests, ...) are needed to model well.",
+    limitation:
+      "Same omitted-confounder blind spot as any selection-on-observables method — Neyman-orthogonality protects against slow convergence of the nuisance models, not against an entirely missing confounder. Poor cross-fitting fold choice can still leave overfitting bias.",
+    note: "Ỹ = Y − ĝ(X), D̃ = D − m̂(X), τ̂ = Cov(Ỹ,D̃)/Var(D̃) — the nonlinear generalization of the Two-Step Linear Regression formula below (Cheatsheet), not a relative of 2SLS. Same Low credibility tier as Instrumental Variables above — a genuine tie, not an oversight (see the note on that card).",
   },
   r_psm: {
     type: "result",
     category: "observational",
-    estimator: "Weighting / propensity matching / ML",
-    title: "Propensity Score: Matching / IPW / AIPW / Double ML",
+    estimator: "Weighting / propensity matching (AIPW recommended default)",
+    title: "Propensity-Score methods (Matching / IPW / AIPW)",
+    python: "econml.dr.DRLearner (AIPW), causalml, DoWhy for the general workflow, scikit-learn.LogisticRegression for the propensity model itself",
     assumption: "Selection on observables + overlap (common support) between groups.",
     whenToUse:
-      "Many observable covariates, and you can reasonably model P(treatment | X).",
+      "Many observable covariates, and you can reasonably model P(treatment | X) directly rather than fitting flexible nuisance models.",
     limitation:
-      "Doesn't correct for unobserved confounding; sensitive to the propensity model's specification (Double ML partially mitigates this).",
+      "Doesn't correct for unobserved confounding. Plain Matching/IPW need the propensity model itself to be well-specified with no fallback; AIPW is doubly robust (consistent if either the propensity model or the outcome model is correct) and is the recommended default within this family.",
+    note: "e(X) = P(D=1|X); IPW: τ̂ = (1/n)Σ[D·Y/e(X) − (1−D)·Y/(1−e(X))]. Same Low credibility tier as Double ML, but ranks a notch below it on Robustness to researcher choices (propensity-model specification, trimming rule) unless AIPW is used specifically.",
   },
-  r_match: {
+  q_linear: {
+    type: "question",
+    text: "Few covariates: do you trust a linear functional form for the outcome and treatment models?",
+    options: [
+      { label: "Yes, linear form is defensible", next: "r_ancova" },
+      { label: "No, I don't trust linearity", next: "r_distmatch" },
+    ],
+  },
+  r_ancova: {
     type: "result",
     category: "observational",
-    estimator: "Distance (Mahalanobis / NN) or OLS (ANCOVA)",
-    title: "Distance Matching / Stratified Regression (ANCOVA)",
-    assumption: "Selection on observables, with a reasonably known functional relationship.",
-    whenToUse: "Few key covariates, and you want direct, interpretable comparability.",
+    estimator: "OLS with covariates (Two-Step Linear Regression, by Frisch–Waugh–Lovell)",
+    title: "ANCOVA / Stratified Regression (as identification)",
+    python: "statsmodels.formula.api.ols",
+    assumption:
+      "Selection on observables + overlap, with a linear functional form for E[Y|X] and E[D|X] you're willing to trust.",
+    whenToUse: "Few key covariates, and a linear specification is defensible.",
     limitation:
-      "Curse of dimensionality with many covariates; extrapolation outside common support.",
+      "Functional-form misspecification biases τ̂ directly — no double-robustness cushion here, unlike AIPW or Double ML. Same omitted-confounder blind spot as the rest of this family.",
+    note: "Y_i = β0 + τ·D_i + γ·X_i + ε_i; by Frisch–Waugh–Lovell this is numerically identical to residualizing both Y and D on X and regressing residual on residual. This is the design-as-identification use of ANCOVA — distinct from its variance-reduction use inside an RCT (see the RCT card above, which uses the identical equation for a different job). Same Low credibility tier as Distance Matching, but fewer researcher degrees of freedom.",
+  },
+  r_distmatch: {
+    type: "result",
+    category: "observational",
+    estimator: "Distance (Mahalanobis / nearest-neighbor) matching",
+    title: "Distance Matching",
+    python: "scikit-learn.neighbors.NearestNeighbors with a Mahalanobis metric is the usual DIY route; for a full matching workflow (calipers, diagnostics), bridging to R's MatchIt via rpy2 is still common in practice",
+    assumption:
+      "Selection on observables + overlap, with few, well-understood covariates and a trusted distance metric.",
+    whenToUse: "Few key covariates, and you want direct, interpretable comparability rather than a fitted model.",
+    limitation:
+      "Curse of dimensionality with more than a handful of covariates; extrapolation outside common support. The metric/caliper choice can materially change the matched sample — the most sensitive design in this family to researcher choices.",
+    note: "Same Low credibility tier as ANCOVA, but the metric and caliper choice make it the most researcher-choice-sensitive design in the whole selection-on-observables family.",
   },
   r_reconsider: {
     type: "result",
     category: "caution",
     estimator: "— (sensitivity analysis / bounds)",
     title: "Unobserved confounding: reconsider the design",
+    python: "sensemakr (Cinelli–Hazlett) for regression-based sensitivity bounds; Rosenbaum-bounds tooling is thinner in Python — R's rbounds/sensitivitymv are more mature, bridge via rpy2 if needed",
     assumption: "—",
     whenToUse: "No observable-adjustment method is valid if there are unmeasured confounders.",
     limitation:
-      "Go back and look for an instrument, a discontinuity, or a panel design. If that's not possible, at least run a sensitivity analysis (Rosenbaum bounds) to quantify how much unobserved confounding would be needed to invalidate the result.",
+      "Go back and look for an instrument, a discontinuity, or a panel design. If that's not possible, at least run a sensitivity analysis (Rosenbaum bounds, E-value, or Cinelli–Hazlett) to quantify how much unobserved confounding would be needed to invalidate the result.",
+    note: "This catch-all can in principle trigger after any step, not just this one — but it bites hardest here, in the selection-on-observables tier, since 'no unmeasured confounder exists at all' is the broadest untestable assumption in the whole reference, versus the narrow, specific untestable piece each quasi-experimental design carries (an exclusion restriction, continuity, parallel trends).",
   },
 };
 
 const RESULT_IDS = [
-  "r_rct", "r_switchback", "r_iv", "r_rdd_sharp", "r_rdd_fuzzy", "r_its",
-  "r_fe", "r_scm", "r_did", "r_psm", "r_match", "r_reconsider",
+  "r_rct", "r_switchback",
+  "r_rdd_sharp", "r_rdd_fuzzy",
+  "r_did", "r_fe", "r_scm",
+  "r_iv",
+  "r_dml", "r_psm", "r_ancova", "r_distmatch",
+  "r_its",
+  "r_reconsider",
 ];
 
 const ESTIMATORS = [
@@ -288,10 +373,16 @@ const ESTIMATORS = [
     formula: "min_w Σ(X₁ − Σⱼ wⱼXⱼ)²  s.t. wⱼ≥0, Σwⱼ=1\nτ_t = Y₁ₜ − Σⱼ wⱼYⱼₜ",
   },
   {
-    name: "Matching / IPW / AIPW / Double ML",
-    designs: "Selection on observables (combinable with DiD → conditional DiD, or with RCT for precision)",
-    description: "Reweight or match units by their propensity score e(X) to simulate balance between groups.",
+    name: "Matching / IPW / AIPW",
+    designs: "Selection on observables — Propensity-Score methods (combinable with DiD → conditional DiD, or with RCT for precision)",
+    description: "Reweight or match units by their propensity score e(X) to simulate balance between groups. AIPW adds an outcome-model augmentation term for double robustness.",
     formula: "e(X) = P(D=1 | X)\nIPW: τ = (1/n)Σ[ D·Y/e(X) − (1−D)·Y/(1−e(X)) ]",
+  },
+  {
+    name: "Double ML (residual-on-residual)",
+    designs: "Selection on observables — high-dimensional/nonlinear X (full formula and derivation in the 2SLR vs. 2SLS vs. DML comparison below)",
+    description: "Same skeleton as Two-Step Linear Regression — residualize both Y and D on X, then residual on residual — but with flexible learners and cross-fitting instead of OLS.",
+    formula: "Ỹ = Y − ĝ(X)\nD̃ = D − m̂(X)\nτ̂ = Cov(Ỹ,D̃) / Var(D̃)",
   },
   {
     name: "Segmented trend regression",
@@ -474,6 +565,16 @@ export default function CausalDecisionTree() {
             at the end you'll see which estimator goes with each one. Several designs share an
             estimator.
           </p>
+          <p className="text-slate-400 mt-2 text-sm leading-relaxed">
+            Question order is ranked by <span className="text-slate-300">Assumption credibility</span> first,
+            then <span className="text-slate-300">Robustness to approximate conditions</span>, then{" "}
+            <span className="text-slate-300">Precision</span>, then{" "}
+            <span className="text-slate-300">Robustness to researcher choices</span> as the final
+            tiebreaker. Operational difficulty is deliberately excluded from the ranking — it only
+            gates whether a step is checkable at all, which is why Interrupted Time Series (cheapest
+            to attempt) is still checked ahead of its actual last-resort rank, and why
+            reconsideration of the design can in principle interrupt any step, not just the last one.
+          </p>
         </div>
 
         {/* Breadcrumb trace */}
@@ -542,6 +643,11 @@ export default function CausalDecisionTree() {
             <div className="text-xs text-slate-500 mb-4" style={MONO}>
               Estimator: <span className="text-slate-300">{node.estimator}</span>
             </div>
+            {node.python && (
+              <div className="text-xs text-slate-500 mb-4" style={MONO}>
+                Python: <span className="text-slate-300">{node.python}</span>
+              </div>
+            )}
             {node.assumption !== "—" && (
               <div className="mb-3">
                 <div className="text-[11px] text-slate-500 uppercase tracking-wide mb-1" style={MONO}>
@@ -644,6 +750,11 @@ export default function CausalDecisionTree() {
                   <div className="text-slate-500 text-[11px] mb-2" style={MONO}>
                     Estimator: {n.estimator}
                   </div>
+                  {n.python && (
+                    <div className="text-slate-500 text-[11px] mb-2" style={MONO}>
+                      Python: {n.python}
+                    </div>
+                  )}
                   <div className="text-slate-400 text-xs leading-relaxed">
                     <span className="text-slate-500">When:</span> {n.whenToUse}
                   </div>
@@ -699,12 +810,6 @@ export default function CausalDecisionTree() {
               </p>
             </div>
           </div>
-          <p className="text-slate-400 text-sm leading-relaxed">
-            A natural experiment doesn't determine the design or the estimator — it only tells
-            you the exogeneity came from historical happenstance, not from a researcher. That's
-            why it isn't a branch of the tree: look for "Source · classic examples" on the IV,
-            RDD, DiD, and Fixed Effects cards in the reference sheet above.
-          </p>
         </div>
 
         {/* Design vs Estimator */}
